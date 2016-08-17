@@ -55,21 +55,12 @@ QUnit.test("getEpubMetaInfo", function (assert) {
     equal(metaInfo.title, "Web *to EPUB: Extension \\for Chrome?");
     equal(metaInfo.author, "David & Teviotdale");
     equal(metaInfo.language, "en-US");
-    equal(metaInfo.fileName, "Web-toEPUB-Extension-forChrome-.epub");
-    equal(metaInfo.seriesInfo, null);
+    equal(metaInfo.fileName, "Web_to_EPU...for_Chrome.epub");
+    equal(metaInfo.seriesName, null);
 });
 
 QUnit.test("parserFactory", function (assert) {
     let parser = parserFactory.fetch("http://archiveofourown.org/works/123456/chapters/9876543");
     assert.ok(parser instanceof ArchiveOfOurOwnParser );
-});
-
-QUnit.test("makeChapterDocCopiesNotMovesNodes", function (assert) {
-    let parser = new ArchiveOfOurOwnParser();
-    let doc = syncLoadArchiveOfOurOwnSampleDoc();
-    equal(doc.all.length, 53);
-    let chapterDoc = parser.makeChapterDoc(doc);
-    equal(doc.all.length, 53);
-    let chapterDoc2 = parser.makeChapterDoc(doc);
 });
 

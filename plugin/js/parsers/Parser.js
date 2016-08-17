@@ -3,8 +3,10 @@
 */
 "use strict";
 
-function Parser() {
-    this.chapters = [];
+class Parser {
+    constructor() {
+        this.chapters = [];
+    }
 }
 
 Parser.prototype.getEpubMetaInfo = function (dom){
@@ -15,18 +17,8 @@ Parser.prototype.getEpubMetaInfo = function (dom){
     metaInfo.author = that.extractAuthor(dom);
     metaInfo.language = that.extractLanguage(dom);
     metaInfo.fileName = that.makeFileName(metaInfo.title);
-    metaInfo.seriesInfo = that.extractSeriesInfo(dom);
+    that.extractSeriesInfo(dom, metaInfo);
     return metaInfo;
-}
-
-Parser.prototype.makeChapterDoc = function(dom) {
-    let that = this;
-    let doc = util.createEmptyXhtmlDoc();
-    let content = that.findContent(dom)
-    if (content != null) {
-        util.addToDocBody(doc, content.cloneNode(true));
-    }
-    return doc;
 }
 
 Parser.prototype.singleChapterStory = function (baseUrl, dom) {
@@ -48,17 +40,13 @@ Parser.prototype.getBaseUrl = function (dom) {
     return Array.prototype.slice.apply(dom.getElementsByTagName("base"))[0].href;
 }
 
-// Name to save file as. Default is strip spaces from title and add ".epub" extension.
+// Name to save EPUB file as.
 Parser.prototype.makeFileName = function(title) {
     if (title == null) {
         return "web.epub";
     } else {
-        // strip spaces
-        title = title.replace(/\s+/g, "");
-
-        // replace characters that are not legal in filenames
-        // ToDo: add rest of illegal chars.
-        title = title.replace(/:|\?|\*|\\/g, "-")
+        // allow only legal characters within the file name
+        title = util.safeForFileName(title);
 
         // append suffix
         return title + ".epub";
@@ -66,12 +54,28 @@ Parser.prototype.makeFileName = function(title) {
 }
 
 Parser.prototype.epubItemSupplier = function (chapters) {
+    let that = this;
     if (chapters == undefined) {
         chapters = this.chapters;
     }
-    let supplier = new EpubItemSupplier(this);
-    supplier.setChapters(chapters);
+    let epubItems = that.chaptersToEpubItems(chapters);
+    let imageCollector = ImageCollector.StubCollector();
+    let supplier = new EpubItemSupplier(this, epubItems, imageCollector);
     return supplier;
+}
+
+Parser.prototype.chaptersToEpubItems = function (chapters) {
+    let that = this;
+    let epubItems = [];
+    let index = -1;
+    for(let chapter of chapters) {
+        let content = that.findContent(chapter.rawDom);
+        if (content != null) {
+            let epubItem = new ChapterEpubItem(chapter, content, ++index);
+            epubItems.push(epubItem);
+        }
+    }
+    return epubItems;
 }
 
 Parser.prototype.appendColumnDataToRow = function (row, textData) {
@@ -158,8 +162,8 @@ Parser.prototype.fetchChapters = function() {
     that.chapters.forEach(function(chapter) {
         sequence = sequence.then(function () {
             return client.fetchHtml(chapter.sourceUrl);
-        }).then(function (rawDom) {
-            chapter.rawDom = rawDom;
+        }).then(function (xhr) {
+            chapter.rawDom = xhr.responseXML;
             that.updateLoadState(chapter);
         }); 
     });
@@ -209,6 +213,14 @@ Parser.prototype.extractLanguage = function(dom) {
     return "en";
 };
 
-Parser.prototype.extractSeriesInfo = function(dom) {
-    return null;
+Parser.prototype.extractSeriesInfo = function(dom, metaInfo) {
+    // Derived classes will override
+}
+
+Parser.prototype.setRemoveDuplicateImages = function(isRemove) {
+    this.imageCollector.removeDuplicateImages = isRemove;
+}
+
+Parser.prototype.setCoverImage = function(imageInfo) {
+    this.imageCollector.setCoverImage(imageInfo);
 }

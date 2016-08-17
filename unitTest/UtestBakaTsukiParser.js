@@ -20,7 +20,7 @@ function getTestDom() {
         "<x>" +
            "<!-- comment 1 -->" +
            "<h1>T1</h1>" +
-           "<div class=\"toc\"></div>" +
+           "<div id=\"toc\"></div>" +
            "<!-- comment 2 -->" +
            "<script>\"use strict\"</script>" +
            "<h2>T1.1</h2>" +
@@ -40,7 +40,8 @@ QUnit.test("getEpubMetaInfo", function (assert) {
     equal(metaInfo.title, "Web to Epub");
     equal(metaInfo.author, "<Unknown>");
     equal(metaInfo.language, "en");
-    propEqual(metaInfo.seriesInfo, { name: "Web to Epub", seriesIndex: "103" });
+    equal(metaInfo.seriesName, "Web to Epub");
+    equal(metaInfo.seriesIndex, "103");
 });
 
 QUnit.test("noSeriesInfo", function (assert) {
@@ -48,7 +49,7 @@ QUnit.test("noSeriesInfo", function (assert) {
     let dom = syncLoadBakaTsukiSampleDoc();
     util.getElement(dom, "title").innerText = "Web to Epub";
     let metaInfo = parser.getEpubMetaInfo(dom);
-    equal(metaInfo.seriesInfo, null);
+    equal(metaInfo.seriesName, null);
 });
 
 QUnit.test("findContent", function (assert) {
@@ -163,6 +164,7 @@ QUnit.test("removeUnwantedTableWhenTableNested", function (assert) {
 QUnit.test("processImages", function (assert) {
     let dom = new DOMParser().parseFromString(
         "<x>" +
+           "<div></div>" +
            "<ul class=\"gallery mw-gallery-traditional\">"+
                "<li class=\"gallerybox\" style=\"width: 155px\"><div style=\"width: 155px\">" +
                    "<div class=\"thumb\">" +
@@ -188,7 +190,7 @@ QUnit.test("processImages", function (assert) {
         "text/html"
     );
 
-    let imageCollector = new BakaTsukiImageCollector();
+    let imageCollector = new ImageCollector();
     let imagesMap = imageCollector.findImagesUsedInDocument(dom.body);
 
     // fake getting image size data
@@ -199,7 +201,7 @@ QUnit.test("processImages", function (assert) {
     imageInfo.height = 300;
     imageInfo.width = 400;
 
-    let parser = new BakaTsukiParser();
+    let parser = new BakaTsukiParser(imageCollector);
     parser.processImages(dom.documentElement, imagesMap);
 
     // convert to XHTML for comparison
@@ -209,25 +211,26 @@ QUnit.test("processImages", function (assert) {
 
     assert.equal(doc2.getElementsByTagName("x")[0].outerHTML,
         "<x xmlns=\"http://www.w3.org/1999/xhtml\">" +
-           "<ul class=\"gallery mw-gallery-traditional\">" +
-               "<li class=\"gallerybox\"><div>" +
-                    "<div class=\"svg_outer svg_inner\">"+
-                        "<svg xmlns=\"http://www.w3.org/2000/svg\" xmlns:xlink=\"http://www.w3.org/1999/xlink\" height=\"100%\" width=\"100%\" version=\"1.1\" preserveAspectRatio=\"xMidYMid meet\" viewBox=\"0 0 200 100\">" +
-                            "<image xlink:href=\"images/image_0000.jpg\" height=\"100\" width=\"200\"/>"+
-                        "</svg>"+
-                    "</div>"+
-               "</div></li>"+
-               "<li class=\"comment\"></li>" +
-           "</ul>" +
+           "<div></div>" +
+           "<div>" +
+             "<div class=\"svg_outer svg_inner\">"+
+                "<svg xmlns=\"http://www.w3.org/2000/svg\" xmlns:xlink=\"http://www.w3.org/1999/xlink\" height=\"95%\" width=\"100%\" version=\"1.1\" preserveAspectRatio=\"xMidYMid meet\" viewBox=\"0 0 200 100\">" +
+                    "<image xlink:href=\"../Images/0000_BTS_vol_01_000a.jpg\" height=\"100\" width=\"200\"/>"+
+                    "<desc>https://www.baka-tsuki.org/project/index.php?title=File:BTS_vol_01_000a.jpg</desc>"+
+                "</svg>"+
+             "</div>"+
+           "</div>"+
            "<div class=\"svg_outer svg_inner\">"+
-                "<svg xmlns=\"http://www.w3.org/2000/svg\" xmlns:xlink=\"http://www.w3.org/1999/xlink\" height=\"100%\" width=\"100%\" version=\"1.1\" preserveAspectRatio=\"xMidYMid meet\" viewBox=\"0 0 400 300\">" +
-                    "<image xlink:href=\"images/image_0001.png\" height=\"300\" width=\"400\"/>"+
+                "<svg xmlns=\"http://www.w3.org/2000/svg\" xmlns:xlink=\"http://www.w3.org/1999/xlink\" height=\"95%\" width=\"100%\" version=\"1.1\" preserveAspectRatio=\"xMidYMid meet\" viewBox=\"0 0 400 300\">" +
+                    "<image xlink:href=\"../Images/0001_BTS_vol_01_000b.png\" height=\"300\" width=\"400\"/>"+
+                    "<desc>https://www.baka-tsuki.org/project/index.php?title=File:BTS_vol_01_000b.png</desc>"+
                 "</svg>"+
             "</div>"+
            "<div class=\"thumbinner\">T1</div>" +
            "<div class=\"svg_outer svg_inner\">"+
-                "<svg xmlns=\"http://www.w3.org/2000/svg\" xmlns:xlink=\"http://www.w3.org/1999/xlink\" height=\"100%\" width=\"100%\" version=\"1.1\" preserveAspectRatio=\"xMidYMid meet\" viewBox=\"0 0 200 100\">" +
-                    "<image xlink:href=\"images/image_0000.jpg\" height=\"100\" width=\"200\"/>"+
+                "<svg xmlns=\"http://www.w3.org/2000/svg\" xmlns:xlink=\"http://www.w3.org/1999/xlink\" height=\"95%\" width=\"100%\" version=\"1.1\" preserveAspectRatio=\"xMidYMid meet\" viewBox=\"0 0 200 100\">" +
+                    "<image xlink:href=\"../Images/0000_BTS_vol_01_000a.jpg\" height=\"100\" width=\"200\"/>"+
+                    "<desc>https://www.baka-tsuki.org/project/index.php?title=File:BTS_vol_01_000a.jpg</desc>"+
                 "</svg>"+
             "</div>"+
         "</x>");
@@ -261,6 +264,44 @@ QUnit.test("flattenContent", function (assert) {
         "</div>");
 });
 
+QUnit.test("hasNoVisibleContent", function (assert) {
+    let dom = new DOMParser().parseFromString(
+        "<html><head><title></title></head>" +        
+        "<body><div style=\"display:none;\"></div>"+
+        "<div class=\"print-no\">\n"+
+        "</div>"+
+         "<svg xmlns=\"http://www.w3.org/2000/svg\" xmlns:xlink=\"http://www.w3.org/1999/xlink\" height=\"100%\" width=\"100%\" version=\"1.1\" preserveAspectRatio=\"xMidYMid meet\" viewBox=\"0 0 1500 597\">"+
+         "<image xlink:href=\"../Images/[0000]Hantuki01 001.jpg\" height=\"597\" width=\"1500\" data-origin=\"http://sonako.wikia.com/wiki/File:Hantuki01 001.jpg\"/>"+
+         "</svg>"+
+         "<div><div id=\"mb_video_syncad_bottom\" style=\"padding: 5px 0px 0px;\"></div></div><p><br />"+
+         "</p>\n</body></html>",
+        "text/html"
+    );
+
+    let elements = new Array();
+    for(let child of dom.getElementsByTagName("body")[0].childNodes) {
+        elements.push(child);
+    };
+
+    assert.equal(BakaTsukiParser.prototype.hasVisibleContent(elements), true);
+
+    // remove <image>, now no visible content
+    let newElements = elements.filter(e => (e.tagName !== "svg"));
+    assert.equal(BakaTsukiParser.prototype.hasVisibleContent(newElements), false);
+
+    // add <img> at top level
+    let img = dom.createElement("img");
+    newElements.push(img);
+    assert.equal(BakaTsukiParser.prototype.hasVisibleContent(newElements), true);
+
+    // add nested <img>
+    newElements.pop();
+    assert.equal(BakaTsukiParser.prototype.hasVisibleContent(newElements), false);
+    newElements[0].appendChild(img);
+    assert.equal(BakaTsukiParser.prototype.hasVisibleContent(newElements), true);
+});
+
+
 QUnit.test("splitContentIntoSections", function (assert) {
     let dom = new DOMParser().parseFromString(
         "<div>" +
@@ -268,6 +309,8 @@ QUnit.test("splitContentIntoSections", function (assert) {
            "<h1>H1.1</h1>" +
            "<p>text1</p>" +
            "\n" +
+           "<p><br /></p>" +
+           "<br />" +
            "<h1>H1.2</h1>" +
            "<h2>H2.2</h2>" +
            "<p>text2</p>" +
@@ -337,9 +380,33 @@ test("fixupFootnotes", function (assert) {
     let epubItems = parser.splitContentIntoSections(content, null);
     parser.fixupFootnotes(epubItems);
 
-    assert.equal(fetchHrefForId(epubItems, "cite_ref-1"), "index_split_0003.html#cite_note-1");
-    assert.equal(fetchHrefForId(epubItems, "cite_ref-2"), "index_split_0001.html#cite_note-2");
-    assert.equal(fetchHrefForId(epubItems, "cite_note-1"), "index_split_0000.html#cite_ref-1");
-    assert.equal(fetchHrefForId(epubItems, "cite_note-2"), "index_split_0002.html#cite_ref-2");
+    assert.equal(fetchHrefForId(epubItems, "cite_ref-1"), "../Text/0003_H4.xhtml#cite_note-1");
+    assert.equal(fetchHrefForId(epubItems, "cite_ref-2"), "../Text/0001_H2.xhtml#cite_note-2");
+    assert.equal(fetchHrefForId(epubItems, "cite_note-1"), "../Text/0000_H1.xhtml#cite_ref-1");
+    assert.equal(fetchHrefForId(epubItems, "cite_note-2"), "../Text/0002_H3.xhtml#cite_ref-2");
 
+});
+
+// demonstrate Chrome closing <br> tags when convert from HTML to XHTML
+test("replaceInvalidElements", function (assert) {
+    let dom = new DOMParser().parseFromString(
+        "<html>" +
+            "<head><title></title></head>" +
+            "<body>" +
+                "<p>SomeText</p>" +
+                "<br>" +
+                "<p>More</p>" +
+            "</body>" +
+        "</html>",
+        "text/html");
+    let parser = new BakaTsukiParser();
+    let content = dom.body.cloneNode(true);
+    assert.equal(content.outerHTML, "<body><p>SomeText</p><br><p>More</p></body>");
+
+    let xhtml = util.createEmptyXhtmlDoc();
+    let body = xhtml.getElementsByTagName("body")[0];
+    body.parentNode.replaceChild(content, body);
+
+    assert.equal(xhtml.getElementsByTagName("body")[0].outerHTML, 
+        "<body xmlns=\"http://www.w3.org/1999/xhtml\"><p>SomeText</p><br /><p>More</p></body>");
 });

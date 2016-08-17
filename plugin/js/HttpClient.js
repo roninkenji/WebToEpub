@@ -63,7 +63,7 @@ HttpClient.prototype = {
         let that = this;
         if (that.validateStatus(url, xhr, event, reject)) {
             that.setBaseTag(url, xhr.responseXML);
-            resolve(xhr.responseXML);
+            resolve(xhr);
         };
     },
 
@@ -83,7 +83,7 @@ HttpClient.prototype = {
     onLoadBinary: function (url, xhr, event, resolve, reject) {
         let that = this;
         if (that.validateStatus(url, xhr, event, reject)) {
-            resolve(xhr.response);
+            resolve(xhr);
         };
     },
 

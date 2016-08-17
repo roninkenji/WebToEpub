@@ -1,93 +1,73 @@
 /*
     Provides information (and files) that will be packed into an EpubPacker.
-    Conceptually, it provides the interface that the EpubPacker uses to pull
-    information from a Parser.
-    This default implementation is for source where each web page is a chapter.
+    This implementation is where source Baka-Tsuki.
 */
 
 "use strict";
 
-function EpubItemSupplier(parser) {
-    this.items = [];
-    this.parser = parser;
-}
-
-// load set of chapters
-EpubItemSupplier.prototype.setChapters = function (chapters) {
-    this.items = chapters;
-}
-
-EpubItemSupplier.prototype.createXhtmlFileName = function (fileIndex) {
-    return "index_split_" + util.zeroPad(fileIndex) + ".html";
-}
-
-// return id attribute to go into <item> element in <manifest>
-EpubItemSupplier.prototype.createId = function(fileIndex) {
-    return "html" + util.zeroPad(fileIndex);
+class EpubItemSupplier {
+    constructor(parser, epubItems, imageCollector) {
+        this.parser = parser;
+        this.epubItems = [];
+        this.coverImageInfo = imageCollector.coverImageInfo;
+        imageCollector.imagesToPackInEpub().forEach(image => this.epubItems.push(image));
+        epubItems.forEach(item => this.epubItems.push(item));
+        let that = this;
+        this.coverImageId = () => that.coverImageInfo.getId();
+    };
 }
 
 // used to populate manifest
 EpubItemSupplier.prototype.manifestItems = function*() {
     let that = this;
-    let index = 0;
-    while (index < that.items.length) {
-        ++index;
+    for(let item of that.epubItems) {
         yield {
-            href: that.createXhtmlFileName(index - 1),
-            id:   that.createId(index - 1),
-            mediaType: "application/xhtml+xml"
+            href: item.getZipHref(),
+            getId: () => item.getId(),
+            mediaType: item.getMediaType()
         };
     };
 }
 
 // used to populate spine
 EpubItemSupplier.prototype.spineItems = function*() {
-    yield* this.manifestItems();
+    let that = this;
+    for(let item of that.epubItems) {
+        if (item.isInSpine) {
+            yield { getId: () => item.getId() };
+        };
+    };
 }
 
 // used to populate Zip file itself
 EpubItemSupplier.prototype.files = function*() {
     let that = this;
-    let index = 0;
-    while (index < that.items.length) {
-        ++index;
-        let rawDom = that.items[index - 1].rawDom;
+    for(let item of that.epubItems) {
         yield {
-            href: that.createXhtmlFileName(index - 1),
-            content: util.xmlToString(that.parser.makeChapterDoc(rawDom))
-        }
+            href: item.getZipHref(),
+            content: item.fileContentForEpub()
+        };
     };
 }
 
 // used to populate table of contents
 EpubItemSupplier.prototype.chapterInfo = function*() {
     let that = this;
-    let index = 0;
-    while (index < that.items.length) {
-        ++index;
-        if (typeof (that.items[index - 1].title) === "undefined") {
-            continue;
-        } else {
-            yield {
-                depth: 0,
-                title: that.items[index - 1].title,
-                src: that.createXhtmlFileName(index - 1)
-            }
-        }
+    for(let epubItem of that.epubItems) {
+        if (epubItem.chapterInfo != undefined) {
+            yield* epubItem.chapterInfo();
+        };
     };
 }
 
-EpubItemSupplier.prototype.hasCoverImageFile = function() {
-    return (this.coverImageFileName() != null);
-}
-
-// Name of Cover image in EPUB file
-// returns null if no cover image
-EpubItemSupplier.prototype.coverImageFileName = function() {
-    return null;
-}
-
-// create a XHTML file that "wraps" the cover image
 EpubItemSupplier.prototype.makeCoverImageXhtmlFile = function() {
-    throw new Error("Not implemented");
+    let that = this;
+    let doc = util.createEmptyXhtmlDoc();
+    let body = doc.getElementsByTagName("body")[0];
+    body.appendChild(that.coverImageInfo.createImageElement());
+    return util.xmlToString(doc);
+}
+
+EpubItemSupplier.prototype.hasCoverImageFile = function() {
+    return (this.coverImageInfo != null);
 }

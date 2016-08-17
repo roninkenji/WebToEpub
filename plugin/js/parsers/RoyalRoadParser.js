@@ -3,20 +3,17 @@
 */
 "use strict";
 
-function RoyalRoadParser() {
+class RoyalRoadParser extends Parser{
+    constructor() {
+        super();
+    }
 }
-
-// Make RoyalRoadParser inherit from Parser
-RoyalRoadParser.prototype = Object.create(Parser.prototype);
-RoyalRoadParser.prototype.constructor = RoyalRoadParser;
 
 parserFactory.register("royalroadl.com", function() { return new RoyalRoadParser() });
 
 RoyalRoadParser.prototype.getChapterUrls = function (dom) {
     let that = this;
-    return new Promise(function(resolve, reject) {
-        resolve(that.getElements(dom, "li", e => (e.className === "chapter")).map(element => that.elementToChapterInfo(element)));
-    });
+    return Promise.resolve(that.getElements(dom, "li", e => (e.className === "chapter")).map(element => that.elementToChapterInfo(element)));
 };
 
 RoyalRoadParser.prototype.elementToChapterInfo = function (chapterElement) {
@@ -31,14 +28,26 @@ RoyalRoadParser.prototype.elementToChapterInfo = function (chapterElement) {
 RoyalRoadParser.prototype.findContent = function (dom) {
     let that = this;
     let content = util.getElement(dom, "div", e => (e.className === "post_body scaleimages") );
-    
-    // cleanup story content
-    that.removePostContent(content);
-    that.stripStyle(content);
+    that.removeUnwantedElementsFromContent(dom, content);
+    that.addTitleToContent(dom, content);
     return content;
 };
 
-RoyalRoadParser.prototype.removePostContent = function (element) {
+RoyalRoadParser.prototype.removeUnwantedElementsFromContent = function(dom, content) {
+    let that = this;
+    that.removeNavigationBox(content);
+    that.stripStyle(content);
+
+    // get rid of donation request at end of chapters
+    util.removeElements(util.getElements(content, "div", e => e.className === "thead"));
+
+    // remove links to get rid of the "Read this chapter using beta fiction reader"
+    util.removeElements(util.getElements(content, "a"));
+    that.removeOlderChapterNavJunk(dom, content);
+    util.removeEmptyDivElements(content);
+}
+
+RoyalRoadParser.prototype.removeNavigationBox = function (element) {
     let navigationBox = this.findNavigationBox(element);
     if (navigationBox !== null) {
         util.removeNode(navigationBox);
@@ -76,3 +85,29 @@ RoyalRoadParser.prototype.extractAuthor = function(dom) {
     return author.startsWith("by ") ? author.substring(3) : author;
 };
 
+RoyalRoadParser.prototype.addTitleToContent = function(dom, content) {
+    let that = this;
+    let titleText = that.findChapterTitle(dom);
+    if (titleText !== "") {
+        let title = dom.createElement("h2");
+        title.appendChild(dom.createTextNode(titleText));
+        content.insertBefore(title, content.firstChild);
+    };
+}
+
+RoyalRoadParser.prototype.findChapterTitle = function(dom) {
+    let title = util.getElement(dom, "div", e => (e.className === "ccgtheadposttitle"));
+    return (title === null) ? "" : title.innerText.trim();
+}
+
+RoyalRoadParser.prototype.removeOlderChapterNavJunk = function(dom, content) {
+    // some older chapters have next chapter & previous chapter links seperated by string "<-->"
+    let walker = dom.createTreeWalker(content, NodeFilter.SHOW_TEXT, 
+        n => (n.textContent.trim() === "<-->"), 
+        false
+    );
+    let node = null;
+    while (node = walker.nextNode()) {
+        util.removeNode(node);
+    };
+}

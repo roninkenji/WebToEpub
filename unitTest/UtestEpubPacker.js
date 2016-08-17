@@ -4,9 +4,12 @@
 module( "EpubPacker");
 function makeDummyXhtmlFile(title) {
     let xhtml = util.createEmptyXhtmlDoc();
+    let content = xhtml.createElement("div");
+    content.className = "userstuff module";
+    xhtml.getElementsByTagName("body")[0].appendChild(content);
     let h1 = xhtml.createElement("h1");
     h1.InnerText = title;
-    xhtml.getElementsByTagName("body")[0].appendChild(h1);
+    content.appendChild(h1);
     return xhtml;
 }
 
@@ -19,25 +22,31 @@ function makePacker() {
     return epubPacker;
 }
 
-function makeEpubItemSupplier() {
+function makeEpubItemSupplier(imageCollector) {
+    imageCollector = imageCollector || ImageCollector.StubCollector();
     let chapters = [];
     for (let i = 0; i < 2; ++i) {
         let title = "Title" + i;
         chapters.push({
+            sourceUrl: "http://dummy.com/" + title,
             title: title,
-            rawContent: makeDummyXhtmlFile(title)
+            rawDom: makeDummyXhtmlFile(title)
         });
     }
-    return new ArchiveOfOurOwnParser().epubItemSupplier(chapters);
+    let parser = new ArchiveOfOurOwnParser();
+    let epubItems = parser.chaptersToEpubItems(chapters);
+    return new EpubItemSupplier(parser, epubItems, imageCollector);
 }
 
 test("buildContentOpf", function (assert) {
     let epubPacker = makePacker();
-    epubPacker.metaInfo.seriesInfo = { name: "BakaSeries", seriesIndex: "666" };
+    epubPacker.metaInfo.seriesName = "BakaSeries";
+    epubPacker.metaInfo.seriesIndex = "666";
     epubPacker.getDateForMetaData = function () { return "2015-10-17T21:04:54.061Z"; };
     let contentOpf = epubPacker.buildContentOpf(makeEpubItemSupplier());
 
-    assert.equal(contentOpf,
+    // firefox adds /r/n after some elements. Remove so string same for Chrome and Firefox.
+    assert.equal(contentOpf.replace(/\r|\n/g, ""),
         "<?xml version='1.0' encoding='utf-8'?>"+
         "<package xmlns=\"http://www.idpf.org/2007/opf\" version=\"2.0\" unique-identifier=\"BookId\">"+
             "<metadata xmlns:dc=\"http://purl.org/dc/elements/1.1/\" xmlns:opf=\"http://www.idpf.org/2007/opf\">"+
@@ -50,26 +59,33 @@ test("buildContentOpf", function (assert) {
             "<meta content=\"666\" name=\"calibre:series_index\"/>" +
             "</metadata>"+
             "<manifest>"+
-              "<item href=\"index_split_0000.html\" id=\"html0000\" media-type=\"application/xhtml+xml\"/>" +
-              "<item href=\"index_split_0001.html\" id=\"html0001\" media-type=\"application/xhtml+xml\"/>" +
+              "<item href=\"Text/0000_Title0.xhtml\" id=\"xhtml0000\" media-type=\"application/xhtml+xml\"/>" +
+              "<item href=\"Text/0001_Title1.xhtml\" id=\"xhtml0001\" media-type=\"application/xhtml+xml\"/>" +
+              "<item href=\"Styles/stylesheet.css\" id=\"stylesheet\" media-type=\"text/css\"/>" +
               "<item href=\"toc.ncx\" id=\"ncx\" media-type=\"application/x-dtbncx+xml\"/>" +
             "</manifest>"+
             "<spine toc=\"ncx\">"+
-              "<itemref idref=\"html0000\"/>" +
-              "<itemref idref=\"html0001\"/>" +
+              "<itemref idref=\"xhtml0000\"/>" +
+              "<itemref idref=\"xhtml0001\"/>" +
             "</spine>" +
         "</package>"
     );
 });
 
 test("buildContentOpfWithCover", function (assert) {
-    let itemSupplier = makeEpubItemSupplier();
-    itemSupplier.coverImageFileName = function () { return "cover.png" };
+    let image = new ImageInfo("http://bp.org/thepic.jpeg", 0, "http://bp.org/thepic.jpeg");
+    image.isCover = true;
+    let imageCollector = {
+        coverImageInfo: image,
+        imagesToPackInEpub: () => [ image ]
+    };
+    let itemSupplier = makeEpubItemSupplier(imageCollector);
     let epubPacker = makePacker();
     epubPacker.getDateForMetaData = function () { return "2015-10-17T21:04:54.061Z"; };
     let contentOpf = epubPacker.buildContentOpf(itemSupplier);
 
-    assert.equal(contentOpf,
+    // firefox adds /r/n after some elements. Remove so string same for Chrome and Firefox.
+    assert.equal(contentOpf.replace(/\r|\n/g, ""),
         "<?xml version='1.0' encoding='utf-8'?>" +
         "<package xmlns=\"http://www.idpf.org/2007/opf\" version=\"2.0\" unique-identifier=\"BookId\">" +
             "<metadata xmlns:dc=\"http://purl.org/dc/elements/1.1/\" xmlns:opf=\"http://www.idpf.org/2007/opf\">" +
@@ -78,29 +94,69 @@ test("buildContentOpfWithCover", function (assert) {
             "<dc:date>2015-10-17T21:04:54.061Z</dc:date>" +
             "<dc:creator opf:file-as=\"Dummy &amp; Author\" opf:role=\"aut\">Dummy &amp; Author</dc:creator>" +
             "<dc:identifier id=\"BookId\" opf:scheme=\"URI\">Dummy UUID</dc:identifier>" +
-            "<meta content=\"cover.png\" name=\"cover\"/>" +
+            "<meta content=\"cover-image\" name=\"cover\"/>" +
             "</metadata>" +
             "<manifest>" +
-              "<item href=\"index_split_0000.html\" id=\"html0000\" media-type=\"application/xhtml+xml\"/>" +
-              "<item href=\"index_split_0001.html\" id=\"html0001\" media-type=\"application/xhtml+xml\"/>" +
+              "<item href=\"Images/0000_thepic.jpeg\" id=\"cover-image\" media-type=\"image/jpeg\"/>" +
+              "<item href=\"Text/0000_Title0.xhtml\" id=\"xhtml0000\" media-type=\"application/xhtml+xml\"/>" +
+              "<item href=\"Text/0001_Title1.xhtml\" id=\"xhtml0001\" media-type=\"application/xhtml+xml\"/>" +
+              "<item href=\"Styles/stylesheet.css\" id=\"stylesheet\" media-type=\"text/css\"/>" +
               "<item href=\"toc.ncx\" id=\"ncx\" media-type=\"application/x-dtbncx+xml\"/>" +
-              "<item href=\"cover.xhtml\" id=\"cover.xhtml\" media-type=\"application/x-dtbncx+xml\"/>" +
+              "<item href=\"Text/Cover.xhtml\" id=\"cover\" media-type=\"application/xhtml+xml\"/>" +
             "</manifest>" +
             "<spine toc=\"ncx\">" +
-              "<itemref idref=\"cover.xhtml\"/>" +
-              "<itemref idref=\"html0000\"/>" +
-              "<itemref idref=\"html0001\"/>" +
+              "<itemref idref=\"cover\"/>" +
+              "<itemref idref=\"xhtml0000\"/>" +
+              "<itemref idref=\"xhtml0001\"/>" +
             "</spine>" +
             "<guide>" +
-                "<reference href=\"cover.xhtml\" title=\"Cover\" type=\"cover\"/>" +
+                "<reference href=\"Text/Cover.xhtml\" title=\"Cover\" type=\"cover\"/>" +
             "</guide>" +
+        "</package>"
+    );
+});
+
+test("buildContentOpfWithTranslatorAndAuthorFileAs", function (assert) {
+    let epubPacker = makePacker();
+    epubPacker.metaInfo.seriesName = "BakaSeries";
+    epubPacker.metaInfo.seriesIndex = "666";
+    epubPacker.metaInfo.fileAuthorAs = "Doe, John";
+    epubPacker.metaInfo.translator = "Baka-Tsuki staff";
+    epubPacker.getDateForMetaData = function () { return "2015-10-17T21:04:54.061Z"; };
+    let contentOpf = epubPacker.buildContentOpf(makeEpubItemSupplier());
+
+    // firefox adds /r/n after some elements. Remove so string same for Chrome and Firefox.
+    assert.equal(contentOpf.replace(/\r|\n/g, ""),
+        "<?xml version='1.0' encoding='utf-8'?>" +
+        "<package xmlns=\"http://www.idpf.org/2007/opf\" version=\"2.0\" unique-identifier=\"BookId\">" +
+            "<metadata xmlns:dc=\"http://purl.org/dc/elements/1.1/\" xmlns:opf=\"http://www.idpf.org/2007/opf\">" +
+            "<dc:title>Dummy &lt;Title&gt;</dc:title>" +
+            "<dc:language>en</dc:language>" +
+            "<dc:date>2015-10-17T21:04:54.061Z</dc:date>" +
+            "<dc:creator opf:file-as=\"Doe, John\" opf:role=\"aut\">Dummy &amp; Author</dc:creator>" +
+            "<dc:contributor opf:file-as=\"Baka-Tsuki staff\" opf:role=\"trl\">Baka-Tsuki staff</dc:contributor>" +
+            "<dc:identifier id=\"BookId\" opf:scheme=\"URI\">Dummy UUID</dc:identifier>" +
+            "<meta content=\"BakaSeries\" name=\"calibre:series\"/>" +
+            "<meta content=\"666\" name=\"calibre:series_index\"/>" +
+            "</metadata>" +
+            "<manifest>" +
+              "<item href=\"Text/0000_Title0.xhtml\" id=\"xhtml0000\" media-type=\"application/xhtml+xml\"/>" +
+              "<item href=\"Text/0001_Title1.xhtml\" id=\"xhtml0001\" media-type=\"application/xhtml+xml\"/>" +
+              "<item href=\"Styles/stylesheet.css\" id=\"stylesheet\" media-type=\"text/css\"/>" +
+              "<item href=\"toc.ncx\" id=\"ncx\" media-type=\"application/x-dtbncx+xml\"/>" +
+            "</manifest>" +
+            "<spine toc=\"ncx\">" +
+              "<itemref idref=\"xhtml0000\"/>" +
+              "<itemref idref=\"xhtml0001\"/>" +
+            "</spine>" +
         "</package>"
     );
 });
 
 test("buildTableOfContents", function (assert) {
     let buildTableOfContents = makePacker().buildTableOfContents(makeEpubItemSupplier());
-    assert.equal(buildTableOfContents,
+    // firefox adds /r/n after some elements. Remove so string same for Chrome and Firefox.
+    assert.equal(buildTableOfContents.replace(/\r|\n/g, ""),
         "<?xml version='1.0' encoding='utf-8'?>" +
         "<ncx xmlns=\"http://www.daisy.org/z3986/2005/ncx/\" version=\"2005-1\" xml:lang=\"en\">" +
           "<head>" +
@@ -113,17 +169,17 @@ test("buildTableOfContents", function (assert) {
             "<text>Dummy &lt;Title&gt;</text>" +
           "</docTitle>" +
           "<navMap>" +
-            "<navPoint id=\"0001\" playOrder=\"1\">" +
+            "<navPoint id=\"body0001\" playOrder=\"1\">" +
               "<navLabel>" +
                 "<text>Title0</text>" +
               "</navLabel>" +
-              "<content src=\"index_split_0000.html\"/>" +
+              "<content src=\"Text/0000_Title0.xhtml\"/>" +
             "</navPoint>" +
-            "<navPoint id=\"0002\" playOrder=\"2\">" +
+            "<navPoint id=\"body0002\" playOrder=\"2\">" +
               "<navLabel>" +
                 "<text>Title1</text>" +
               "</navLabel>" +
-              "<content src=\"index_split_0001.html\"/>" +
+              "<content src=\"Text/0001_Title1.xhtml\"/>" +
             "</navPoint>" +
           "</navMap>" +
         "</ncx>"
@@ -180,27 +236,31 @@ test("UnwindNavPointParentElementsStack", function (assert) {
 });
 
 test("makeCoverImageXhtmlFile", function (assert) {
-    let imageInfo = new BakaTsukiImageInfo("http://dummy/cover.png", -1, "http://dummy/cover.png");
+    let imageInfo = new ImageInfo("http://dummy/cover.png", -1, "http://dummy/cover.png");
     imageInfo.width = 400;
     imageInfo.height = 200;
-    imageInfo.zipHref = "cover.png"
-    let itemSupplier = new BakaTsukiEpubItemSupplier(null, [], [], imageInfo, "cover.png");
+    imageInfo.zipHref = "OEBPS/Images/cover.png";
+    let dummyImageCollector = {
+        coverImageInfo: imageInfo,
+        imagesToPackInEpub: function () { return []; }
+    };
+    let itemSupplier = new EpubItemSupplier(null, [], dummyImageCollector);
     let xhtmlFile = itemSupplier.makeCoverImageXhtmlFile();
-    assert.equal(xhtmlFile,
+    
+    // firefox adds /r/n after some elements. Remove so string same for Chrome and Firefox.
+    assert.equal(xhtmlFile.replace(/\r|\n/g, ""),
         "<?xml version='1.0' encoding='utf-8'?>" +
+        "<!DOCTYPE html PUBLIC \"-//W3C//DTD XHTML 1.1//EN\" \"http://www.w3.org/TR/xhtml11/DTD/xhtml11.dtd\">" +
         "<html xmlns=\"http://www.w3.org/1999/xhtml\">" +
             "<head>" +
                 "<title></title>" +
-                "<style type=\"text/css\">img { max-width: 100%; padding: 0; margin: 0; } " +
-                "div.svg_outer { display: block; margin-bottom: 0; margin-left: 0; margin-right: 0; margin-top: 0; padding-bottom: 0; padding-left: 0; "+
-                                "padding-right: 0; padding-top: 0; text-align: left } " +
-                "div.svg_inner { display: block; text-align: center } " +
-                "</style>" +
+                "<link href=\"../Styles/stylesheet.css\" type=\"text/css\" rel=\"stylesheet\" />" +
             "</head>" +
             "<body>" +
                "<div class=\"svg_outer svg_inner\">" +
-                    "<svg xmlns=\"http://www.w3.org/2000/svg\" xmlns:xlink=\"http://www.w3.org/1999/xlink\" height=\"100%\" width=\"100%\" version=\"1.1\" preserveAspectRatio=\"xMidYMid meet\" viewBox=\"0 0 400 200\">" +
-                        "<image xlink:href=\"cover.png\" height=\"200\" width=\"400\"/>" +
+                    "<svg xmlns=\"http://www.w3.org/2000/svg\" xmlns:xlink=\"http://www.w3.org/1999/xlink\" height=\"95%\" width=\"100%\" version=\"1.1\" preserveAspectRatio=\"xMidYMid meet\" viewBox=\"0 0 400 200\">" +
+                        "<image xlink:href=\"../Images/cover.png\" height=\"200\" width=\"400\"/>" +
+                        "<desc>http://dummy/cover.png</desc>" + 
                     "</svg>" +
                 "</div>" +
             "</body>" +
